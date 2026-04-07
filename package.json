@@ -1,0 +1,95 @@
+{
+  "name": "payagent",
+  "version": "1.0.0",
+  "description": "Let AI agents pay for APIs. Drop-in fetch wrapper that handles HTTP 402 payments with USDC stablecoins via the x402 protocol.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./vercel": {
+      "import": "./dist/vercel.js",
+      "types": "./dist/vercel.d.ts"
+    },
+    "./langchain": {
+      "import": "./dist/langchain.js",
+      "types": "./dist/langchain.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai-agent",
+    "autonomous-agent",
+    "http-402",
+    "x402",
+    "payment",
+    "usdc",
+    "stablecoin",
+    "micropayment",
+    "api-payment",
+    "langchain",
+    "openai",
+    "claude",
+    "mcp",
+    "agent-tool",
+    "web3",
+    "eip-3009",
+    "base",
+    "ethereum",
+    "polygon"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Polar Industries Ltd",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevemilton/payagent.git"
+  },
+  "homepage": "https://github.com/stevemilton/payagent#readme",
+  "bugs": {
+    "url": "https://github.com/stevemilton/payagent/issues"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0"
+  },
+  "peerDependencies": {
+    "@langchain/core": ">=0.2.0",
+    "ai": ">=3.0.0",
+    "zod": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    },
+    "@langchain/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@langchain/core": "^1.1.39",
+    "@types/node": "^22.0.0",
+    "ai": "^6.0.149",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "zod": "^4.3.6"
+  }
+}
