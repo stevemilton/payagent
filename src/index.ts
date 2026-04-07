@@ -31,6 +31,9 @@ export { PayAgent } from './agent.js';
 export { handlePaymentRequired } from './payment.js';
 export type { HandlePaymentOptions } from './payment.js';
 
+// Constants
+export { AGFAC_FACILITATOR_URL } from './types.js';
+
 // Types
 export type {
   PayAgentConfig,

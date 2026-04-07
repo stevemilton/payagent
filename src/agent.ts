@@ -44,6 +44,7 @@ export class PayAgent {
 
     return handlePaymentRequired(response, urlStr, {
       privateKey: this.config.privateKey,
+      facilitatorUrl: this.config.facilitatorUrl,
       tracker: this.tracker,
       requestInit: init,
     });

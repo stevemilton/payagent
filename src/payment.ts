@@ -11,6 +11,7 @@ import type {
   X402Requirements,
   PaymentReceipt,
 } from './types.js';
+import { AGFAC_FACILITATOR_URL } from './types.js';
 import { SpendTracker } from './limits.js';
 import {
   InvalidRequirementsError,
@@ -61,23 +62,32 @@ function extractAccepts(body: PaymentRequirementsBody): X402Accept[] {
   throw new InvalidRequirementsError('unrecognized format');
 }
 
-/** Parse the 402 response body (may also check X-Payment-Requirements header). */
-export async function parseRequirements(response: Response): Promise<X402Accept[]> {
-  // Try response body first
-  let body: PaymentRequirementsBody;
+interface ParsedRequirements {
+  accepts: X402Accept[];
+  /** Facilitator URL from the 402 response body (if provided by the server). */
+  facilitatorUrl?: string;
+}
+
+/** Parse the 402 response body and extract payment requirements + facilitator URL. */
+export async function parseRequirements(response: Response): Promise<ParsedRequirements> {
+  let json: Record<string, unknown>;
   try {
-    const json = await response.json();
-    // Some servers nest requirements under a `requirements` key
-    body = json.requirements ?? json;
+    json = await response.json();
   } catch {
     throw new InvalidRequirementsError('response body is not valid JSON');
   }
+
+  // Some servers nest requirements under a `requirements` key
+  const body = (json.requirements ?? json) as PaymentRequirementsBody;
 
   if (!body || typeof body !== 'object' || body.x402Version !== 2) {
     throw new InvalidRequirementsError('missing x402Version: 2');
   }
 
-  return extractAccepts(body);
+  return {
+    accepts: extractAccepts(body),
+    facilitatorUrl: typeof json.facilitator === 'string' ? json.facilitator : undefined,
+  };
 }
 
 // ── Resolve EIP-712 domain from 402 response ────────
@@ -161,11 +171,74 @@ async function signPayment(accept: X402Accept, wallet: ethers.Wallet): Promise<S
   return { header, accept };
 }
 
+// ── Facilitator pre-flight verification ─────────────
+
+/**
+ * Resolve the facilitator URL to use:
+ * 1. If the 402 response included a `facilitator` field, prefer that
+ * 2. Otherwise, use the configured facilitatorUrl
+ * 3. Fall back to AgFac production
+ */
+function resolveFacilitatorUrl(
+  responseUrl: string | undefined,
+  configUrl: string | false | undefined,
+): string | null {
+  if (configUrl === false) return null; // explicitly disabled
+  if (responseUrl) return responseUrl;
+  if (configUrl) return configUrl;
+  return AGFAC_FACILITATOR_URL;
+}
+
+/**
+ * Call the facilitator's /verify endpoint to pre-check a signed payment.
+ * Catches issues (insufficient balance, bad signature, nonce reuse) before
+ * the agent retries the original request.
+ */
+async function verifyWithFacilitator(
+  facilitatorUrl: string,
+  paymentHeader: string,
+  accept: X402Accept,
+): Promise<void> {
+  try {
+    const payload = JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf-8'));
+    const res = await fetch(`${facilitatorUrl}/facilitator/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentPayload: payload,
+        paymentRequirements: accept,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+      const reason = (body.error ?? body.errorReason ?? 'verification failed') as string;
+      throw new PaymentRejectedError(res.status, `Facilitator verification failed: ${reason}`);
+    }
+
+    const result = await res.json() as { valid: boolean; error?: string };
+    if (!result.valid) {
+      throw new PaymentRejectedError(402, `Payment invalid: ${result.error ?? 'unknown reason'}`);
+    }
+  } catch (err) {
+    // If the facilitator is unreachable, proceed anyway — the server will settle
+    if (err instanceof PaymentRejectedError) throw err;
+    // Network errors are non-fatal: skip verification, let the server handle it
+  }
+}
+
 // ── Full 402 handling flow ──────────────────────────
 
 export interface HandlePaymentOptions {
   /** Ethereum private key (hex). */
   privateKey: string;
+  /**
+   * Facilitator URL for pre-flight verification.
+   * Default: AgFac (https://agfac-production.up.railway.app).
+   * Set to `false` to skip verification.
+   */
+  facilitatorUrl?: string | false;
   /** Spending tracker (optional — used internally by PayAgent). */
   tracker?: SpendTracker;
   /** Additional headers to include on the retry request. */
@@ -176,18 +249,19 @@ export interface HandlePaymentOptions {
 
 /**
  * Handle a 402 Payment Required response:
- * 1. Parse payment requirements
+ * 1. Parse payment requirements (+ extract facilitator URL from response)
  * 2. Select a supported payment option
  * 3. Check spending limits
  * 4. Sign EIP-3009 transferWithAuthorization
- * 5. Retry the original request with X-PAYMENT header
+ * 5. Pre-verify with facilitator (catches bad signatures / insufficient balance)
+ * 6. Retry the original request with X-PAYMENT header
  */
 export async function handlePaymentRequired(
   response: Response,
   url: string,
   options: HandlePaymentOptions,
 ): Promise<Response> {
-  const accepts = await parseRequirements(response);
+  const { accepts, facilitatorUrl: responseFacilitator } = await parseRequirements(response);
 
   if (accepts.length === 0) {
     throw new InvalidRequirementsError('no payment options in 402 response');
@@ -212,6 +286,12 @@ export async function handlePaymentRequired(
   // Sign
   const wallet = new ethers.Wallet(options.privateKey);
   const { header } = await signPayment(accept, wallet);
+
+  // Pre-verify with facilitator (non-blocking on network errors)
+  const facilitator = resolveFacilitatorUrl(responseFacilitator, options.facilitatorUrl);
+  if (facilitator) {
+    await verifyWithFacilitator(facilitator, header, accept);
+  }
 
   // Retry with payment header
   const retryHeaders = new Headers(options.requestInit?.headers);

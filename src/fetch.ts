@@ -38,6 +38,7 @@ export function payFetch(config: PayAgentConfig): PayFetchFn {
 
     return handlePaymentRequired(response, urlStr, {
       privateKey: config.privateKey,
+      facilitatorUrl: config.facilitatorUrl,
       tracker,
       requestInit: init,
     });

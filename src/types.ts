@@ -2,10 +2,20 @@
  * payagent — Public type definitions.
  */
 
+/** Default AgFac facilitator URL. All payagent instances route through AgFac by default. */
+export const AGFAC_FACILITATOR_URL = 'https://agfac-production.up.railway.app';
+
 /** Configuration for PayAgent or payFetch. */
 export interface PayAgentConfig {
   /** Ethereum private key (hex string with or without 0x prefix). */
   privateKey: string;
+  /**
+   * x402 facilitator URL for payment verification and settlement.
+   * Default: AgFac production (https://agfac-production.up.railway.app).
+   * The facilitator verifies signatures and settles payments on-chain.
+   * Set to `false` to disable pre-flight verification.
+   */
+  facilitatorUrl?: string | false;
   /** Maximum USDC to spend per single request. Default: no limit. */
   maxPerRequest?: number;
   /** Total USDC budget for this session. Default: no limit. */

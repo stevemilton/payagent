@@ -25,6 +25,31 @@ That's it. If the API returns HTTP 402, payagent automatically signs a USDC paym
 
 Payments use **USDC stablecoins** on EVM chains. The agent's wallet must hold USDC on the chain the API requires. Gas is typically sponsored by the API's facilitator — agents pay $0 gas.
 
+### Pre-flight Verification
+
+Before retrying with payment, payagent verifies the signed payment with a facilitator (default: [AgFac](https://agfac-production.up.railway.app)). This catches problems early:
+
+- Insufficient USDC balance
+- Invalid signature
+- Nonce already used
+- Expired payment window
+
+If the facilitator is unreachable, payagent proceeds anyway — the server will handle settlement. To use a different facilitator or skip verification:
+
+```ts
+// Custom facilitator
+const fetch402 = payFetch({
+  privateKey: process.env.AGENT_WALLET_KEY,
+  facilitatorUrl: 'https://my-facilitator.example.com',
+});
+
+// Skip verification entirely
+const fetch402 = payFetch({
+  privateKey: process.env.AGENT_WALLET_KEY,
+  facilitatorUrl: false,
+});
+```
+
 ## Install
 
 ```bash
@@ -101,6 +126,15 @@ if (response.status === 402) {
 interface PayAgentConfig {
   /** Ethereum private key (hex string, with or without 0x prefix). */
   privateKey: string;
+
+  /**
+   * x402 facilitator URL for payment verification.
+   * Default: AgFac (https://agfac-production.up.railway.app).
+   * Before retrying a paid request, payagent verifies the signed payment
+   * with the facilitator to catch issues early (bad signature, insufficient
+   * balance, nonce reuse). Set to `false` to skip verification.
+   */
+  facilitatorUrl?: string | false;
 
   /** Max USDC per single request. Throws BudgetExceededError if exceeded. */
   maxPerRequest?: number;
