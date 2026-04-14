@@ -27,6 +27,8 @@
 // Primary API
 export { payFetch } from './fetch.js';
 export type { PayFetchFn } from './fetch.js';
+export { payFetchDelegated } from './fetch-delegated.js';
+export type { PayFetchDelegatedConfig } from './fetch-delegated.js';
 export { PayAgent } from './agent.js';
 export { handlePaymentRequired } from './payment.js';
 export type { HandlePaymentOptions } from './payment.js';
@@ -53,3 +55,12 @@ export {
   PaymentRejectedError,
   InvalidRequirementsError,
 } from './errors.js';
+
+// ArisPay delegation (Phase 2 — agent provisioning via ArisPay)
+export { DelegationClient } from './delegation.js';
+export type {
+  X402AgentConfig,
+  CreateX402AgentResponse,
+  BalanceResponse,
+} from './delegation.js';
+export { getUSDCBalance, formatUSDC, USDC_CONTRACTS } from './balance.js';
