@@ -1,6 +1,19 @@
 # payagent
 
-Let AI agents pay for APIs. Drop-in fetch wrapper that handles HTTP 402 payments with USDC stablecoins via the x402 protocol.
+Let AI agents pay for APIs. Drop-in fetch wrapper that handles HTTP 402 payments with USDC stablecoins via the [x402 protocol](https://github.com/coinbase/x402).
+
+payagent works in two modes. Pick the one that matches how your agent manages keys:
+
+| Mode | Who holds the signing key | Use when |
+|---|---|---|
+| **Self-custody** (`payFetch`) | Your agent process, via a local private key | You already manage a wallet and want a zero-infrastructure x402 client |
+| **Delegated** (`payFetchDelegated`) | No one in your process — [ArisPay](https://arispay.app) uses Coinbase CDP | You want spend limits enforced server-side and no keys on the agent host |
+
+Both modes speak the same x402 protocol. Both can target the same APIs. The choice is about where the key lives.
+
+---
+
+## Quick start — self-custody
 
 ```ts
 import { payFetch } from 'payagent';
@@ -10,45 +23,35 @@ const res = await fetch402('https://api.example.com/premium-data');
 const data = await res.json();
 ```
 
-That's it. If the API returns HTTP 402, payagent automatically signs a USDC payment and retries.
+If the API returns HTTP 402, payagent signs a USDC payment with your key and retries.
 
-## How It Works
-
-1. Your agent calls `fetch402(url)` — a normal HTTP request
-2. If the server returns **HTTP 402 Payment Required** with x402 payment requirements, payagent:
-   - Parses the payment requirements (amount, chain, recipient)
-   - Signs an EIP-3009 `transferWithAuthorization` using your wallet
-   - Encodes the signature as an `X-PAYMENT` header
-   - Retries the original request with the payment attached
-3. The server verifies and settles the payment, then returns the API response
-4. Your agent gets the response — no manual payment handling needed
-
-Payments use **USDC stablecoins** on EVM chains. The agent's wallet must hold USDC on the chain the API requires. Gas is typically sponsored by the API's facilitator — agents pay $0 gas.
-
-### Pre-flight Verification
-
-Before retrying with payment, payagent verifies the signed payment with a facilitator (default: [AgFac](https://agfac-production.up.railway.app)). This catches problems early:
-
-- Insufficient USDC balance
-- Invalid signature
-- Nonce already used
-- Expired payment window
-
-If the facilitator is unreachable, payagent proceeds anyway — the server will handle settlement. To use a different facilitator or skip verification:
+## Quick start — delegated (via ArisPay)
 
 ```ts
-// Custom facilitator
-const fetch402 = payFetch({
-  privateKey: process.env.AGENT_WALLET_KEY,
-  facilitatorUrl: 'https://my-facilitator.example.com',
+import { DelegationClient, payFetchDelegated } from 'payagent';
+
+// One-time: provision an agent. ArisPay mints a CDP wallet and returns an agent API key.
+const client = new DelegationClient('https://api.arispay.app', process.env.ARISPAY_KEY);
+const agent = await client.createX402Agent({
+  name: 'my-agent',
+  maxPerTx: 100,      // cents — $1.00 per request
+  maxDaily: 1000,     // $10/day
+  maxMonthly: 10000,  // $100/month
+  allowedDomains: ['api.example.com'],
 });
 
-// Skip verification entirely
-const fetch402 = payFetch({
-  privateKey: process.env.AGENT_WALLET_KEY,
-  facilitatorUrl: false,
+console.log('Fund this wallet with USDC on Base Sepolia:', agent.walletAddress);
+await client.pollUntilFunded(agent.agentId);
+
+// Use the agent's API key to make paid requests.
+const fetch402 = payFetchDelegated({
+  arispayUrl: 'https://api.arispay.app',
+  apiKey: agent.apiKey, // returned ONCE by createX402Agent — store it
 });
+const res = await fetch402('https://api.example.com/premium-data');
 ```
+
+No private key ever touches your process. ArisPay enforces `maxPerTx` / `maxDaily` / `maxMonthly` / `allowedDomains` before asking CDP to sign.
 
 ## Install
 
@@ -58,101 +61,140 @@ npm install payagent
 
 Requires Node.js >= 18.
 
-## API
+---
 
-### `payFetch(config)` — Drop-in fetch replacement
+## How x402 works
 
-The simplest way to use payagent. Returns a fetch-compatible function that handles 402 automatically.
+The [x402 protocol](https://github.com/coinbase/x402) uses HTTP status code 402 for machine-to-machine API payments:
+
+1. **Server** returns `402 Payment Required` with payment requirements (chain, amount, recipient).
+2. **Agent** signs an EIP-3009 `transferWithAuthorization` — a gasless USDC transfer authorization.
+3. **Agent** retries the request with the signed payment in the `X-PAYMENT` header.
+4. **Server** (or its facilitator) submits the authorization on-chain and returns the API response.
+
+Key properties:
+- **No gas fees for agents** — the server's facilitator sponsors gas.
+- **USDC stablecoins** — amounts are in dollars, no price volatility.
+- **EIP-712 typed signatures** — secure, replay-protected.
+- **Works on any EVM chain** — Base, Ethereum, Polygon.
+
+---
+
+## Self-custody API
+
+You hold the key. payagent signs locally. No third-party infrastructure.
+
+### `payFetch(config)` — drop-in fetch replacement
 
 ```ts
-import { payFetch } from 'payagent';
-
-const fetch402 = payFetch({
-  privateKey: process.env.AGENT_WALLET_KEY,
-});
-
-// Use exactly like fetch
+const fetch402 = payFetch({ privateKey: process.env.AGENT_WALLET_KEY });
 const res = await fetch402('https://api.example.com/data');
-const res2 = await fetch402('https://api.example.com/submit', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ query: 'hello' }),
-});
 ```
 
-### `PayAgent` class — With spending controls
+### `PayAgent` class — with spending controls
 
-For agents that need budget tracking and spending limits.
+For agents that need budget tracking on the client side.
 
 ```ts
 import { PayAgent } from 'payagent';
 
 const agent = new PayAgent({
   privateKey: process.env.AGENT_WALLET_KEY,
-  maxPerRequest: 1.00,                      // Max $1.00 USDC per request
-  budget: 100.00,                            // $100 total session budget
-  allowedDomains: ['api.example.com'],       // Only pay these domains
-  allowedChains: ['eip155:8453'],            // Only pay on Base mainnet
+  maxPerRequest: 1.00,                   // Max $1.00 per request
+  budget: 100.00,                        // $100 session budget
+  allowedDomains: ['api.example.com'],
+  allowedChains: ['eip155:8453'],        // Base mainnet only
 });
 
 const res = await agent.fetch('https://api.example.com/data');
-
-console.log(agent.address);    // "0x742d35Cc..." — your wallet address
-console.log(agent.spent);      // 0.10 — USDC spent this session
-console.log(agent.remaining);  // 99.90 — budget remaining
-console.log(agent.payments);   // Array of PaymentReceipt objects
+console.log(agent.address, agent.spent, agent.remaining);
 ```
 
-### `handlePaymentRequired(response, url, options)` — Manual control
+Limits are enforced in-process. Since you hold the key, nothing stops you from bypassing them — use delegated mode if you need server-enforced caps.
 
-For framework authors or custom integration. Call this when you already have a 402 response.
+### `handlePaymentRequired(response, url, options)` — manual control
+
+For custom integrations where you already have a 402 response in hand.
+
+### Pre-flight verification
+
+Before retrying, self-custody mode verifies the signed payment with an x402 facilitator (default: [AgFac](https://agfac-production.up.railway.app)) to catch bad signatures, insufficient balance, or nonce reuse early.
 
 ```ts
-import { handlePaymentRequired } from 'payagent';
-
-const response = await fetch(url);
-
-if (response.status === 402) {
-  const paidResponse = await handlePaymentRequired(response, url, {
-    privateKey: process.env.AGENT_WALLET_KEY,
-  });
-  console.log(await paidResponse.json());
-}
+// Custom facilitator
+payFetch({ privateKey, facilitatorUrl: 'https://my-facilitator.example.com' });
+// Skip verification
+payFetch({ privateKey, facilitatorUrl: false });
 ```
 
-## Configuration
+### Wallet setup (self-custody only)
+
+1. Generate a wallet:
+   ```ts
+   import { ethers } from 'ethers';
+   const wallet = ethers.Wallet.createRandom();
+   ```
+2. Fund it with USDC on your chosen chain (Base recommended for low fees; Base Sepolia for testing).
+3. Export:
+   ```bash
+   export AGENT_WALLET_KEY=0x...
+   ```
+
+---
+
+## Delegated API (ArisPay)
+
+No private key lives on the agent host. ArisPay holds a Coinbase CDP-managed wallet, enforces spend limits and allowed domains server-side, and signs on the agent's behalf.
+
+You'll need an [ArisPay](https://arispay.app) developer key to provision agents. Agents created this way get their own scoped API key.
+
+### `DelegationClient` — provision and monitor agents
 
 ```ts
-interface PayAgentConfig {
-  /** Ethereum private key (hex string, with or without 0x prefix). */
-  privateKey: string;
+const client = new DelegationClient('https://api.arispay.app', process.env.ARISPAY_KEY);
 
-  /**
-   * x402 facilitator URL for payment verification.
-   * Default: AgFac (https://agfac-production.up.railway.app).
-   * Before retrying a paid request, payagent verifies the signed payment
-   * with the facilitator to catch issues early (bad signature, insufficient
-   * balance, nonce reuse). Set to `false` to skip verification.
-   */
-  facilitatorUrl?: string | false;
+const agent = await client.createX402Agent({
+  name: 'hermes-prod',
+  agentType: 'hermes',
+  maxPerTx: 100,       // cents
+  maxDaily: 1000,
+  maxMonthly: 10000,
+  allowedDomains: ['api.example.com'],
+  network: 'base-sepolia',
+});
+// agent.agentId, agent.walletAddress, agent.apiKey (returned ONCE)
 
-  /** Max USDC per single request. Throws BudgetExceededError if exceeded. */
-  maxPerRequest?: number;
+// Wait for the wallet to be funded with USDC.
+await client.pollUntilFunded(agent.agentId);
 
-  /** Total USDC budget for this session. Throws BudgetExceededError when exhausted. */
-  budget?: number;
-
-  /** Only pay for requests to these domains. Throws DomainNotAllowedError otherwise. */
-  allowedDomains?: string[];
-
-  /** Only sign payments on these CAIP-2 networks. */
-  allowedChains?: string[];
-}
+// Or check manually:
+const balance = await client.getBalance(agent.agentId);
+// { walletAddress, usdcBalance, network, fundedAt }
 ```
 
-## Supported Chains
+Supported `network` values: `base-sepolia` (default), `base`, `ethereum`, `polygon`.
 
-payagent works on any EVM chain with USDC. The chain is determined by the API's 402 response — payagent reads the `network` field and signs for that chain automatically.
+The `apiKey` returned by `createX402Agent` is the credential for this agent only — ArisPay stores only its SHA-256 hash and cannot recover it. Store it securely.
+
+### `payFetchDelegated(config)` — drop-in fetch, server-signed
+
+```ts
+const fetch402 = payFetchDelegated({
+  arispayUrl: 'https://api.arispay.app',
+  apiKey: agent.apiKey,
+});
+const res = await fetch402('https://api.example.com/data');
+```
+
+When the server returns 402, payagent asks ArisPay to sign via CDP. ArisPay checks `maxPerTx` / `maxDaily` / `maxMonthly` / `allowedDomains` before signing; failures surface as `PaymentRejectedError`.
+
+### `getUSDCBalance(address, chain?, rpcUrl?)` — direct on-chain read
+
+Utility that reads USDC balance directly from any EVM RPC — works in either mode for sanity-checking wallet state.
+
+---
+
+## Supported chains
 
 | Chain | Network ID | Notes |
 |-------|-----------|-------|
@@ -161,32 +203,28 @@ payagent works on any EVM chain with USDC. The chain is determined by the API's 
 | Ethereum | `eip155:1` | Mainnet |
 | Polygon | `eip155:137` | Mainnet |
 
-Your wallet must hold USDC on the chain the API requires. Most x402 APIs use Base for the lowest transaction costs.
+Your wallet must hold USDC on the chain the API requires.
+
+---
 
 ## Errors
 
-payagent throws typed errors you can catch and handle:
-
 ```ts
 import {
-  BudgetExceededError,    // Payment would exceed maxPerRequest or budget
-  UnsupportedChainError,  // API requires a chain not in allowedChains
-  DomainNotAllowedError,  // URL domain not in allowedDomains
-  PaymentRejectedError,   // Server returned 402 even after payment was sent
+  BudgetExceededError,      // Payment would exceed maxPerRequest or budget (self-custody)
+  UnsupportedChainError,    // API requires a chain not in allowedChains
+  DomainNotAllowedError,    // URL domain not in allowedDomains
+  PaymentRejectedError,     // Server returned 402 even after payment; or ArisPay denied signing
   InvalidRequirementsError, // Could not parse the 402 response
-  PayAgentError,          // Base class for all payagent errors
+  PayAgentError,            // Base class
 } from 'payagent';
-
-try {
-  const res = await agent.fetch(url);
-} catch (err) {
-  if (err instanceof BudgetExceededError) {
-    console.log(`Too expensive: ${err.requested} USDC (limit: ${err.limit})`);
-  }
-}
 ```
 
-## Framework Integrations
+---
+
+## Framework integrations
+
+The Vercel AI SDK and LangChain helpers use self-custody mode. For delegated mode inside those frameworks, wrap `payFetchDelegated` yourself.
 
 ### Vercel AI SDK
 
@@ -202,11 +240,11 @@ const payTool = createPayAgentTool({
 const { text } = await generateText({
   model: anthropic('claude-sonnet-4-20250514'),
   tools: { pay_api: payTool },
-  prompt: 'Get the premium weather forecast from https://weather-api.example.com/forecast',
+  prompt: 'Get the premium forecast from https://weather-api.example.com/forecast',
 });
 ```
 
-Requires peer dependencies: `ai`, `zod`
+Requires peer dependencies: `ai`, `zod`.
 
 ### LangChain
 
@@ -217,100 +255,15 @@ const payTool = createPayAgentTool({
   privateKey: process.env.AGENT_WALLET_KEY,
   budget: 10.00,
 });
-
-// Use with any LangChain agent
-const agent = createToolCallingAgent({ llm, tools: [payTool], prompt });
 ```
 
-Requires peer dependency: `@langchain/core`
+Requires peer dependency: `@langchain/core`.
 
-### MCP Server
+### MCP server
 
-Use [payagent-mcp](https://github.com/stevemilton/payagent-mcp) to add payment capabilities to Claude Desktop, Cursor, or any MCP client:
+Use [payagent-mcp](https://github.com/stevemilton/payagent-mcp) to add payment capabilities to Claude Desktop, Cursor, or any MCP client.
 
-```json
-{
-  "mcpServers": {
-    "payagent": {
-      "command": "npx",
-      "args": ["payagent-mcp"],
-      "env": {
-        "PAYAGENT_PRIVATE_KEY": "0x...",
-        "PAYAGENT_BUDGET_USDC": "10.00"
-      }
-    }
-  }
-}
-```
-
-### OpenAI Function Calling
-
-Use `handlePaymentRequired` inside your function implementation:
-
-```ts
-const tools = [{
-  type: 'function',
-  function: {
-    name: 'fetch_paid_api',
-    description: 'Fetch data from a paid API that requires USDC payment via HTTP 402.',
-    parameters: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'The API URL' },
-        method: { type: 'string', enum: ['GET', 'POST'], default: 'GET' },
-      },
-      required: ['url'],
-    },
-  },
-}];
-
-// In your function handler:
-async function fetchPaidApi({ url, method = 'GET' }) {
-  const res = await fetch(url, { method });
-  if (res.status === 402) {
-    const paid = await handlePaymentRequired(res, url, {
-      privateKey: process.env.AGENT_WALLET_KEY,
-    });
-    return await paid.text();
-  }
-  return await res.text();
-}
-```
-
-## Wallet Setup
-
-1. **Generate a wallet** (if you don't have one):
-   ```ts
-   import { ethers } from 'ethers';
-   const wallet = ethers.Wallet.createRandom();
-   console.log('Address:', wallet.address);
-   console.log('Private key:', wallet.privateKey);
-   ```
-
-2. **Fund with USDC** on Base (recommended):
-   - Send USDC to your wallet address on Base (`eip155:8453`)
-   - For testing, use Base Sepolia faucet for testnet USDC
-
-3. **Set as environment variable**:
-   ```bash
-   export AGENT_WALLET_KEY=0x...your_private_key...
-   ```
-
-## How x402 Works
-
-The [x402 protocol](https://github.com/coinbase/x402) uses HTTP status code 402 (Payment Required) for machine-to-machine API payments:
-
-1. **Server** returns HTTP 402 with payment requirements (chain, amount, recipient address)
-2. **Agent** signs an EIP-3009 `transferWithAuthorization` — a gasless USDC transfer authorization
-3. **Agent** retries the request with the signed payment in the `X-PAYMENT` header
-4. **Server** (or its facilitator) submits the authorization on-chain to transfer USDC
-5. **Server** returns the API response
-
-Key properties:
-- **No gas fees for agents** — the server's facilitator sponsors gas
-- **USDC stablecoins** — no price volatility, amounts are in dollars
-- **EIP-712 typed signatures** — secure, verifiable, replay-protected
-- **Works on any EVM chain** — Base, Ethereum, Polygon, etc.
+---
 
 ## License
 
