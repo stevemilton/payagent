@@ -139,13 +139,16 @@ function chainIdFromNetwork(network: string): number {
 
 /**
  * Build the EIP-712 domain directly from the 402 response.
- * USDC uses name="USD Coin", version="2" on all chains.
+ * IMPORTANT: use `extra.name` verbatim — different USDC deployments use
+ * different EIP-712 domain names. Mainnet Ethereum USDC is "USD Coin" but
+ * Base Sepolia (0x036C...) uses "USDC". If we substitute, the signature
+ * recovers to a different address and the facilitator rejects.
  * chainId and verifyingContract come from the accept option.
  */
 function buildEIP712Domain(accept: X402Accept) {
   return {
-    name: accept.extra?.name === 'USDC' ? 'USD Coin' : (accept.extra?.name ?? 'USD Coin'),
-    version: accept.extra?.version ?? '2',
+    name: (accept.extra?.name as string | undefined) ?? 'USDC',
+    version: (accept.extra?.version as string | undefined) ?? '2',
     chainId: chainIdFromNetwork(accept.network),
     verifyingContract: accept.asset,
   };
