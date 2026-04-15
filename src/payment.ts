@@ -35,6 +35,21 @@ const TRANSFER_WITH_AUTHORIZATION_TYPES = {
 
 // ── Parse 402 response ──────────────────────────────
 
+// Coinbase's reference x402 middleware emits short network names
+// ("base-sepolia"), while the x402 v2 spec and our internal code use CAIP-2
+// ("eip155:84532"). Accept either on the way in.
+const NETWORK_SHORT_TO_CAIP2: Record<string, string> = {
+  ethereum: 'eip155:1',
+  polygon: 'eip155:137',
+  base: 'eip155:8453',
+  'base-sepolia': 'eip155:84532',
+};
+
+export function normalizeNetwork(network: string): string {
+  if (network.includes(':')) return network; // already CAIP-2
+  return NETWORK_SHORT_TO_CAIP2[network] ?? network;
+}
+
 function isStandardFormat(body: PaymentRequirementsBody): body is X402Requirements {
   return 'accepts' in body && Array.isArray(body.accepts);
 }
@@ -46,12 +61,12 @@ function isFlatFormat(body: PaymentRequirementsBody): body is AgfacFlatRequireme
 /** Normalize both x402 v2 standard and AgFac flat format into accepts array. */
 function extractAccepts(body: PaymentRequirementsBody): X402Accept[] {
   if (isStandardFormat(body)) {
-    return body.accepts;
+    return body.accepts.map((a) => ({ ...a, network: normalizeNetwork(a.network) }));
   }
   if (isFlatFormat(body)) {
     return [{
       scheme: body.scheme,
-      network: body.network,
+      network: normalizeNetwork(body.network),
       maxAmountRequired: body.maxAmountRequired,
       resource: body.resource,
       asset: body.asset,
