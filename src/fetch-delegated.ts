@@ -60,7 +60,7 @@ export function payFetchDelegated(config: PayFetchDelegatedConfig): PayFetchFn {
     const response = await fetch(urlStr, init);
     if (response.status !== 402) return response;
 
-    const { accepts } = await parseRequirements(response);
+    const { accepts, x402Version } = await parseRequirements(response);
     if (accepts.length === 0) {
       throw new InvalidRequirementsError('no payment options in 402 response');
     }
@@ -93,6 +93,7 @@ export function payFetchDelegated(config: PayFetchDelegatedConfig): PayFetchFn {
           extra: accept.extra,
         },
         resourceUrl: urlStr,
+        x402Version,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });

@@ -66,6 +66,8 @@ interface ParsedRequirements {
   accepts: X402Accept[];
   /** Facilitator URL from the 402 response body (if provided by the server). */
   facilitatorUrl?: string;
+  /** x402 protocol version advertised by the seller. Defaults to 1. */
+  x402Version: number;
 }
 
 /** Parse the 402 response body and extract payment requirements + facilitator URL. */
@@ -80,13 +82,20 @@ export async function parseRequirements(response: Response): Promise<ParsedRequi
   // Some servers nest requirements under a `requirements` key
   const body = (json.requirements ?? json) as PaymentRequirementsBody;
 
-  if (!body || typeof body !== 'object' || body.x402Version !== 2) {
-    throw new InvalidRequirementsError('missing x402Version: 2');
+  if (!body || typeof body !== 'object') {
+    throw new InvalidRequirementsError('invalid 402 response body');
   }
+  // x402Version 1 is what the Coinbase reference middleware emits; v2 is the
+  // newer draft. Accept both — we echo whichever version the seller advertised
+  // in the signed payload so their facilitator doesn't reject the mismatch.
+  const version = typeof (body as { x402Version?: unknown }).x402Version === 'number'
+    ? (body as { x402Version: number }).x402Version
+    : 1;
 
   return {
     accepts: extractAccepts(body),
     facilitatorUrl: typeof json.facilitator === 'string' ? json.facilitator : undefined,
+    x402Version: version,
   };
 }
 
@@ -124,7 +133,7 @@ interface SignedPayment {
   accept: X402Accept;
 }
 
-async function signPayment(accept: X402Accept, wallet: ethers.Wallet): Promise<SignedPayment> {
+async function signPayment(accept: X402Accept, wallet: ethers.Wallet, x402Version = 1): Promise<SignedPayment> {
   const now = Math.floor(Date.now() / 1000);
   const validAfter = now - 60;
   const validBefore = now + 480; // 8-minute window
@@ -161,7 +170,7 @@ async function signPayment(accept: X402Accept, wallet: ethers.Wallet): Promise<S
   );
 
   const payload = {
-    x402Version: 2,
+    x402Version,
     payload: { signature, authorization },
     accepted: accept,
     resource: accept.resource,
@@ -261,7 +270,7 @@ export async function handlePaymentRequired(
   url: string,
   options: HandlePaymentOptions,
 ): Promise<Response> {
-  const { accepts, facilitatorUrl: responseFacilitator } = await parseRequirements(response);
+  const { accepts, facilitatorUrl: responseFacilitator, x402Version } = await parseRequirements(response);
 
   if (accepts.length === 0) {
     throw new InvalidRequirementsError('no payment options in 402 response');
@@ -285,7 +294,7 @@ export async function handlePaymentRequired(
 
   // Sign
   const wallet = new ethers.Wallet(options.privateKey);
-  const { header } = await signPayment(accept, wallet);
+  const { header } = await signPayment(accept, wallet, x402Version);
 
   // Pre-verify with facilitator (non-blocking on network errors)
   const facilitator = resolveFacilitatorUrl(responseFacilitator, options.facilitatorUrl);
