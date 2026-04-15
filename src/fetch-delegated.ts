@@ -114,7 +114,13 @@ export function payFetchDelegated(config: PayFetchDelegatedConfig): PayFetchFn {
     retryHeaders.set('X-PAYMENT', signed.paymentHeader);
     const paid = await fetch(urlStr, { ...init, headers: retryHeaders });
     if (paid.status === 402) {
-      throw new PaymentRejectedError(402, 'Server returned 402 after payment was signed and sent');
+      // Read the seller's response body so callers can see the verifier's
+      // actual rejection reason instead of a generic "server returned 402".
+      const body = await paid.text().catch(() => '');
+      throw new PaymentRejectedError(
+        402,
+        `Server returned 402 after payment was signed and sent. Seller response: ${body.slice(0, 1000)}`,
+      );
     }
     return paid;
   };
