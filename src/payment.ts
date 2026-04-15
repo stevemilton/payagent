@@ -50,6 +50,16 @@ export function normalizeNetwork(network: string): string {
   return NETWORK_SHORT_TO_CAIP2[network] ?? network;
 }
 
+const NETWORK_CAIP2_TO_SHORT: Record<string, string> = Object.fromEntries(
+  Object.entries(NETWORK_SHORT_TO_CAIP2).map(([s, c]) => [c, s]),
+);
+
+/** Convert CAIP-2 back to the short network name x402 sellers emit on the wire. */
+export function denormalizeNetwork(network: string): string {
+  if (!network.includes(':')) return network; // already short
+  return NETWORK_CAIP2_TO_SHORT[network] ?? network;
+}
+
 function isStandardFormat(body: PaymentRequirementsBody): body is X402Requirements {
   return 'accepts' in body && Array.isArray(body.accepts);
 }
@@ -184,11 +194,14 @@ async function signPayment(accept: X402Accept, wallet: ethers.Wallet, x402Versio
     },
   );
 
+  // x402 PaymentPayload shape expected by Coinbase's verifier (zod-validated):
+  //   { x402Version, scheme, network, payload: { signature, authorization } }
+  // `network` must be the short form ("base-sepolia"), not CAIP-2.
   const payload = {
     x402Version,
+    scheme: accept.scheme,
+    network: denormalizeNetwork(accept.network),
     payload: { signature, authorization },
-    accepted: accept,
-    resource: accept.resource,
   };
 
   const header = Buffer.from(JSON.stringify(payload)).toString('base64');
