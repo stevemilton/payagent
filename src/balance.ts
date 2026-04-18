@@ -32,13 +32,13 @@ const ERC20_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)']
  * Fetch the USDC balance for a wallet on the given chain.
  *
  * @param walletAddress EVM address (0x…).
- * @param chain One of 'base' | 'base-sepolia' | 'ethereum' | 'polygon'. Default: 'base-sepolia'.
+ * @param chain One of 'base' | 'base-sepolia' | 'ethereum' | 'polygon'. Default: 'base'.
  * @param rpcUrl Optional RPC URL override. Falls back to a public endpoint.
  * @returns USDC balance in 6-decimal base units as a bigint.
  */
 export async function getUSDCBalance(
   walletAddress: string,
-  chain: keyof typeof USDC_CONTRACTS = 'base-sepolia',
+  chain: keyof typeof USDC_CONTRACTS = 'base',
   rpcUrl?: string,
 ): Promise<bigint> {
   const contractAddress = USDC_CONTRACTS[chain];

@@ -1,44 +1,53 @@
 /**
  * payagent — Let AI agents pay for APIs.
  *
- * Drop-in fetch wrapper that handles HTTP 402 payments
- * with USDC stablecoins via the x402 protocol.
+ * Drop-in fetch wrapper that handles HTTP 402 payments with USDC stablecoins
+ * via the x402 protocol, using ArisPay's delegated-custody model. No private
+ * key ever lives in your process — ArisPay holds a Coinbase CDP-managed
+ * wallet and enforces spend limits server-side.
  *
  * @example
  * ```ts
- * // Simplest usage — drop-in fetch replacement
- * import { payFetch } from 'payagent';
+ * import { DelegationClient, payFetchDelegated } from 'payagent';
  *
- * const fetch402 = payFetch({ privateKey: process.env.AGENT_WALLET_KEY });
- * const res = await fetch402('https://api.example.com/premium-data');
- *
- * // With spending controls
- * import { PayAgent } from 'payagent';
- *
- * const agent = new PayAgent({
- *   privateKey: process.env.AGENT_WALLET_KEY,
- *   budget: 10.00,
- *   maxPerRequest: 1.00,
+ * // 1. Provision an agent once. ArisPay mints a CDP wallet and returns an
+ * //    agent-scoped API key (returned exactly once).
+ * const client = new DelegationClient('https://api.arispay.app', process.env.ARISPAY_KEY);
+ * const agent = await client.createX402Agent({
+ *   name: 'my-agent',
+ *   maxPerTx: 100,      // cents — $1.00 cap per request
+ *   maxDaily: 1000,     // $10 / day
+ *   maxMonthly: 10000,  // $100 / month
+ *   allowedDomains: ['api.example.com'],
  * });
- * const res = await agent.fetch('https://api.example.com/data');
+ *
+ * // 2. Fund the wallet address with USDC on Base, then wait for it to latch.
+ * await client.pollUntilFunded(agent.agentId);
+ *
+ * // 3. Make paid requests. 402s are handled transparently.
+ * const fetch402 = payFetchDelegated({
+ *   arispayUrl: 'https://api.arispay.app',
+ *   apiKey: agent.apiKey,
+ * });
+ * const res = await fetch402('https://api.example.com/premium');
  * ```
  */
 
-// Primary API
-export { payFetch } from './fetch.js';
-export type { PayFetchFn } from './fetch.js';
+// Primary API — delegated signing via ArisPay
 export { payFetchDelegated } from './fetch-delegated.js';
-export type { PayFetchDelegatedConfig } from './fetch-delegated.js';
-export { PayAgent } from './agent.js';
-export { handlePaymentRequired } from './payment.js';
-export type { HandlePaymentOptions } from './payment.js';
+export type { PayFetchDelegatedConfig, PayFetchFn } from './fetch-delegated.js';
+export { DelegationClient } from './delegation.js';
+export type {
+  X402AgentConfig,
+  CreateX402AgentResponse,
+  BalanceResponse,
+} from './delegation.js';
 
-// Constants
-export { AGFAC_FACILITATOR_URL } from './types.js';
+// On-chain balance helper
+export { getUSDCBalance, formatUSDC, USDC_CONTRACTS } from './balance.js';
 
 // Types
 export type {
-  PayAgentConfig,
   PaymentReceipt,
   X402Requirements,
   X402Accept,
@@ -49,18 +58,6 @@ export type {
 // Errors
 export {
   PayAgentError,
-  BudgetExceededError,
-  UnsupportedChainError,
-  DomainNotAllowedError,
   PaymentRejectedError,
   InvalidRequirementsError,
 } from './errors.js';
-
-// ArisPay delegation (Phase 2 — agent provisioning via ArisPay)
-export { DelegationClient } from './delegation.js';
-export type {
-  X402AgentConfig,
-  CreateX402AgentResponse,
-  BalanceResponse,
-} from './delegation.js';
-export { getUSDCBalance, formatUSDC, USDC_CONTRACTS } from './balance.js';

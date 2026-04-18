@@ -1,7 +1,7 @@
 {
   "name": "payagent",
-  "version": "1.0.5",
-  "description": "Let AI agents pay for APIs. Drop-in fetch wrapper that handles HTTP 402 payments with USDC stablecoins via the x402 protocol.",
+  "version": "2.0.0",
+  "description": "Let AI agents pay for APIs. The ArisPay SDK for x402 payments with delegated-custody wallets — no private keys in your process.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -22,6 +22,7 @@
   },
   "files": [
     "dist",
+    "scripts/postinstall.js",
     "README.md",
     "LICENSE"
   ],
@@ -29,9 +30,11 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/postinstall.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
+    "arispay",
     "ai-agent",
     "autonomous-agent",
     "http-402",
@@ -50,7 +53,9 @@
     "eip-3009",
     "base",
     "ethereum",
-    "polygon"
+    "polygon",
+    "cdp",
+    "delegated-custody"
   ],
   "engines": {
     "node": ">=18"

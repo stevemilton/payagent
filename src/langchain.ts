@@ -6,25 +6,24 @@
  * import { createPayAgentTool } from 'payagent/langchain';
  *
  * const payTool = createPayAgentTool({
- *   privateKey: process.env.AGENT_WALLET_KEY,
- *   budget: 10.00,
+ *   arispayUrl: 'https://api.arispay.app',
+ *   apiKey: process.env.ARISPAY_AGENT_KEY,
  * });
  *
- * // Use in a LangChain agent
  * const agent = createToolCallingAgent({ llm, tools: [payTool], prompt });
  * ```
  */
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod/v3';
-import { PayAgent } from './agent.js';
-import type { PayAgentConfig } from './types.js';
+import { payFetchDelegated, type PayFetchDelegatedConfig } from './fetch-delegated.js';
 
 /**
  * Create a LangChain tool that lets an AI agent make paid API calls.
- * Handles HTTP 402 payment challenges automatically using USDC.
+ * Handles HTTP 402 payment challenges automatically using USDC via
+ * ArisPay-delegated signing. Spend caps are enforced server-side by ArisPay.
  */
-export function createPayAgentTool(config: PayAgentConfig) {
-  const agent = new PayAgent(config);
+export function createPayAgentTool(config: PayFetchDelegatedConfig) {
+  const fetch402 = payFetchDelegated(config);
 
   const schema = z.object({
     url: z.string().describe('The full URL of the API endpoint to call'),
@@ -50,7 +49,7 @@ export function createPayAgentTool(config: PayAgentConfig) {
       'regular fetch when you expect the API might require payment.',
     schema,
     func: async ({ url, method, headers, body }) => {
-      const response = await agent.fetch(url, {
+      const response = await fetch402(url, {
         method,
         headers,
         body,
@@ -61,8 +60,6 @@ export function createPayAgentTool(config: PayAgentConfig) {
       return JSON.stringify({
         status: response.status,
         body: responseBody,
-        spent: agent.spent,
-        remaining: agent.remaining,
       });
     },
   });

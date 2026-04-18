@@ -10,7 +10,7 @@
  *
  * @example
  * ```ts
- * const client = new DelegationClient('https://api.arispay.com', process.env.ARISPAY_API_KEY);
+ * const client = new DelegationClient('https://api.arispay.app', process.env.ARISPAY_API_KEY);
  * const agent = await client.createX402Agent({
  *   name: 'hermes-prod',
  *   agentType: 'hermes',
@@ -19,7 +19,7 @@
  *   maxMonthly: 10000,
  *   allowedDomains: ['api.arcticx.ai'],
  * });
- * console.log('Fund this wallet:', agent.walletAddress);
+ * console.log('Fund this wallet with USDC on Base:', agent.walletAddress);
  * await client.pollUntilFunded(agent.agentId);
  * ```
  */
@@ -36,8 +36,8 @@ export interface X402AgentConfig {
   /** Domains the agent is allowed to pay. Empty = unrestricted on ArisPay side. */
   allowedDomains?: string[];
   description?: string;
-  /** EVM network label: 'base-sepolia' (default) | 'base' | 'ethereum' | 'polygon'. */
-  network?: 'base-sepolia' | 'base' | 'ethereum' | 'polygon';
+  /** EVM network label. Default: 'base' (mainnet). */
+  network?: 'base' | 'base-sepolia' | 'ethereum' | 'polygon';
 }
 
 export interface CreateX402AgentResponse {

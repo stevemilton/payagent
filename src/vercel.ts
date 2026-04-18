@@ -7,8 +7,8 @@
  * import { generateText } from 'ai';
  *
  * const payTool = createPayAgentTool({
- *   privateKey: process.env.AGENT_WALLET_KEY,
- *   budget: 10.00,
+ *   arispayUrl: 'https://api.arispay.app',
+ *   apiKey: process.env.ARISPAY_AGENT_KEY,
  * });
  *
  * const { text } = await generateText({
@@ -20,8 +20,7 @@
  */
 import { tool, type Tool } from 'ai';
 import { z } from 'zod/v4';
-import { PayAgent } from './agent.js';
-import type { PayAgentConfig } from './types.js';
+import { payFetchDelegated, type PayFetchDelegatedConfig } from './fetch-delegated.js';
 
 const inputSchema = z.object({
   url: z.string().describe('The full URL of the API endpoint to call'),
@@ -37,10 +36,6 @@ const inputSchema = z.object({
     .string()
     .optional()
     .describe('Request body (for POST/PUT/PATCH)'),
-  maxPaymentUSDC: z
-    .number()
-    .default(1.0)
-    .describe('Maximum USDC to pay for this single request'),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -48,16 +43,15 @@ type Input = z.infer<typeof inputSchema>;
 interface PayApiResult {
   status: number;
   body: string;
-  spent: number;
-  remaining: number;
 }
 
 /**
  * Create a Vercel AI SDK tool that lets an AI agent make paid API calls.
- * Handles HTTP 402 payment challenges automatically using USDC.
+ * Handles HTTP 402 payment challenges automatically using USDC via
+ * ArisPay-delegated signing. Spend caps are enforced server-side by ArisPay.
  */
-export function createPayAgentTool(config: PayAgentConfig): Tool<Input, PayApiResult> {
-  const agent = new PayAgent(config);
+export function createPayAgentTool(config: PayFetchDelegatedConfig): Tool<Input, PayApiResult> {
+  const fetch402 = payFetchDelegated(config);
 
   return tool<Input, PayApiResult>({
     description:
@@ -66,7 +60,7 @@ export function createPayAgentTool(config: PayAgentConfig): Tool<Input, PayApiRe
       'regular fetch when you expect the API might require payment.',
     inputSchema,
     execute: async ({ url, method, headers, body }) => {
-      const response = await agent.fetch(url, {
+      const response = await fetch402(url, {
         method,
         headers: headers as Record<string, string> | undefined,
         body,
@@ -77,8 +71,6 @@ export function createPayAgentTool(config: PayAgentConfig): Tool<Input, PayApiRe
       return {
         status: response.status,
         body: responseBody,
-        spent: agent.spent,
-        remaining: agent.remaining,
       };
     },
   });
