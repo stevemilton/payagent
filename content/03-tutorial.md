@@ -156,13 +156,13 @@ Now Claude can pay for APIs directly in conversation:
 
 ## What's Next?
 
-- **Monetize your own API**: Add x402 paywalls with `@agfac/middleware` ([docs](https://github.com/stevemilton/payagent))
+- **Monetize your own API**: Add x402 paywalls with `@agfac/middleware` ([docs](https://github.com/arispay-inc/payagent))
 - **Build autonomous agents**: Combine payagent with LangChain or CrewAI for multi-step agent workflows
 - **Production wallets**: Use a hardware wallet or HSM for production agent keys
 
 ---
 
 **Links:**
-- [payagent](https://github.com/stevemilton/payagent) — npm package
-- [payagent-mcp](https://github.com/stevemilton/payagent-mcp) — MCP server
+- [payagent](https://github.com/arispay-inc/payagent) — npm package
+- [payagent-mcp](https://github.com/arispay-inc/payagent-mcp) — MCP server
 - [x402 protocol](https://github.com/coinbase/x402) — protocol spec

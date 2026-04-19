@@ -182,7 +182,7 @@ The facilitator earns a fee (typically 1% with a $0.01 minimum) for sponsoring g
 
 ## Implementation
 
-For agents (payers), use [payagent](https://github.com/stevemilton/payagent):
+For agents (payers), use [payagent](https://github.com/arispay-inc/payagent):
 
 ```typescript
 import { payFetch } from 'payagent';
@@ -191,7 +191,7 @@ const fetch402 = payFetch({ privateKey: process.env.AGENT_WALLET_KEY });
 const res = await fetch402('https://api.example.com/data');
 ```
 
-For API providers (payees), use [@agfac/middleware](https://github.com/stevemilton/payagent):
+For API providers (payees), use [@agfac/middleware](https://github.com/arispay-inc/payagent):
 
 ```typescript
 app.get('/api/data', agfac402({ price: 0.10 }), handler);

@@ -95,8 +95,8 @@ No Stripe. No billing page. Agents pay per-call with USDC.
 Links:
 
 npm: npmjs.com/package/payagent
-GitHub: github.com/stevemilton/payagent
-MCP server: github.com/stevemilton/payagent-mcp
+GitHub: github.com/arispay-inc/payagent
+MCP server: github.com/arispay-inc/payagent-mcp
 
 Built by @[your_handle] / Polar Industries
 

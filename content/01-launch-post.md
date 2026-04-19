@@ -1,7 +1,7 @@
 ---
 title: "Introducing payagent: Let AI Agents Pay for APIs"
 tags: [ai, web3, agents, typescript]
-canonical_url: https://github.com/stevemilton/payagent
+canonical_url: https://github.com/arispay-inc/payagent
 published: false
 ---
 
@@ -151,7 +151,7 @@ The agent can't accidentally drain its wallet. It operates within the constraint
 
 ## For API Providers: Monetize with One Line
 
-If you're building an API and want to accept agent payments, check out [@agfac/middleware](https://github.com/stevemilton/payagent) — Express and Fastify middleware that adds x402 paywalls to any endpoint:
+If you're building an API and want to accept agent payments, check out [@agfac/middleware](https://github.com/arispay-inc/payagent) — Express and Fastify middleware that adds x402 paywalls to any endpoint:
 
 ```typescript
 import { agfac402 } from '@agfac/middleware';
@@ -183,6 +183,6 @@ That's it. Your agent can now pay for APIs.
 
 **Links:**
 - [payagent on npm](https://www.npmjs.com/package/payagent)
-- [payagent on GitHub](https://github.com/stevemilton/payagent)
-- [payagent-mcp](https://github.com/stevemilton/payagent-mcp) — MCP server for Claude/Cursor
+- [payagent on GitHub](https://github.com/arispay-inc/payagent)
+- [payagent-mcp](https://github.com/arispay-inc/payagent-mcp) — MCP server for Claude/Cursor
 - [x402 protocol spec](https://github.com/coinbase/x402)

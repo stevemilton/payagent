@@ -64,11 +64,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stevemilton/payagent.git"
+    "url": "git+https://github.com/arispay-inc/payagent.git"
   },
-  "homepage": "https://github.com/stevemilton/payagent#readme",
+  "homepage": "https://github.com/arispay-inc/payagent#readme",
   "bugs": {
-    "url": "https://github.com/stevemilton/payagent/issues"
+    "url": "https://github.com/arispay-inc/payagent/issues"
   },
   "dependencies": {
     "ethers": "^6.13.0"
